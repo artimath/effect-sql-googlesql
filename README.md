@@ -5,47 +5,31 @@ GoogleSQL compiler for [@effect/sql](https://github.com/Effect-TS/effect/tree/ma
 ## Features
 
 - 🎯 Type-safe GoogleSQL query compilation
-- ☁️ Cloud Spanner integration
-- 🔒 Proper type hints for Spanner data types
+- ☁️ Cloud Spanner type hints for parameters
+- 🔒 Proper escaping with backticks
 - ⚡ Built for production use with Effect.ts
 
 ## Installation
 
 ```bash
-pnpm add effect-sql-googlesql @effect/sql effect @google-cloud/spanner
+pnpm add effect-sql-googlesql @effect/sql effect
 ```
 
 ## Usage
 
-### Basic Setup
+This package is typically consumed via effect-sql-spanner, not used directly. It provides the GoogleSQL compiler that translates Effect SQL statements to Spanner-compatible GoogleSQL.
+
+### Type Hints for Spanner Parameters
+
+GoogleSQL/Spanner requires explicit type hints for parameters in some contexts:
 
 ```typescript
 import * as Compiler from "effect-sql-googlesql/Compiler"
 import * as Statement from "@effect/sql/Statement"
 
-// Create a GoogleSQL compiler
-const compiler = Compiler.make({
-  // Optional: transform column names (e.g. camelCase → snake_case)
-  transformQueryNames: (name) => name
-})
-
-// Compile Effect SQL statements to GoogleSQL
-const query = Statement.make`SELECT * FROM users WHERE id = ${userId}`
-const compiled = compiler.compile(query)
-```
-
-### Type Hints for Spanner
-
-GoogleSQL/Spanner requires explicit type hints for parameters in some contexts. This package provides helpers:
-
-```typescript
-import * as Compiler from "effect-sql-googlesql/Compiler"
-
-// Use typed parameters with explicit Spanner types
-const query = Statement.make`
-  SELECT * FROM users
-  WHERE metadata = ${Compiler.param(jsonData, Compiler.types.json())}
-`
+// Use paramOf for typed parameters
+const jsonData = { user: "alice", role: "admin" }
+const fragment = Compiler.paramOf(Compiler.types.json(), jsonData)
 
 // Available types:
 Compiler.types.string()
@@ -59,124 +43,153 @@ Compiler.types.date()
 Compiler.types.array(Compiler.types.string())  // Array types
 ```
 
-### Integration with Effect SQL Client
+### Creating a Compiler
 
 ```typescript
-import * as Sql from "@effect/sql"
-import * as Compiler from "effect-sql-googlesql/Compiler"
+import { makeCompiler } from "effect-sql-googlesql/Compiler"
+
+const compiler = makeCompiler({
+  // Optional: transform column names (e.g. camelCase → snake_case)
+  transformQueryNames: (name) => name
+})
+
+// Compile statements manually (rare - usually handled by @effect/sql)
+const statement = Statement.make`SELECT * FROM users WHERE id = ${userId}`
+const [sql, params] = compiler.compile(statement)
+```
+
+### Using as Effect Layer
+
+```typescript
 import * as Layer from "effect-sql-googlesql/Layer"
+import * as Sql from "@effect/sql"
 import * as Effect from "effect/Effect"
 
-// Create a client with GoogleSQL compiler
+// Provide compiler via layer
+const GoogleSqlCompilerLayer = Layer.layer({
+  transformQueryNames: (name) => name
+})
+
 const program = Effect.gen(function* () {
   const sql = yield* Sql.client.Client
 
-  // Queries are automatically compiled to GoogleSQL
+  // Compiler is used automatically by @effect/sql
   const users = yield* sql`SELECT * FROM users WHERE active = ${true}`
 
   return users
 })
-
-// Provide the GoogleSQL compiler layer
-const GoogleSqlLayer = Layer.make({
-  transformQueryNames: (name) => name // or your transformer
-})
-
-Effect.runPromise(
-  program.pipe(
-    Effect.provide(GoogleSqlLayer),
-    Effect.provide(YourSpannerClientLayer)
-  )
-)
 ```
 
-### With Cloud Spanner
-
-This package is designed to work with Cloud Spanner's GoogleSQL dialect:
+### Null Values with Type Hints
 
 ```typescript
-import { Spanner } from "@google-cloud/spanner"
-import * as Compiler from "effect-sql-googlesql/Compiler"
-import * as Effect from "effect/Effect"
+import { nullOf, types } from "effect-sql-googlesql/Compiler"
 
-const spanner = new Spanner({
-  projectId: "your-project",
-})
-
-const instance = spanner.instance("your-instance")
-const database = instance.database("your-database")
-
-// Use the compiler with Spanner queries
-const compiler = Compiler.make({})
-const compiled = compiler.compile(yourSqlStatement)
-
-// Execute with Spanner
-const [rows] = await database.run({
-  sql: compiled.sql,
-  params: compiled.params,
-  types: compiled.types
-})
+// Create typed null values
+const fragment = Statement.make`INSERT INTO users (data) VALUES (${nullOf(types.json())})`
 ```
 
 ## API Reference
 
-### `Compiler.make(options)`
+### `makeCompiler(options?)`
 
 Creates a GoogleSQL compiler instance.
 
-**Options**:
-- `transformQueryNames?: (value: string) => string` - Optional transformer for identifiers (e.g., table/column names)
+**Parameters:**
+- `options.transformQueryNames?: (value: string) => string` - Optional transformer for identifiers
 
-**Returns**: Compiler instance with `compile()` method
+**Returns:** `Statement.Compiler`
 
-### `Compiler.param(value, type)`
+### `paramOf(type, value)`
 
-Creates a typed parameter for GoogleSQL queries with explicit Spanner type hints.
+Creates a typed parameter for GoogleSQL with explicit Spanner type hints.
 
-**Parameters**:
+**Parameters:**
+- `type` - Spanner type from `types` object or string type code
 - `value` - The parameter value
-- `type` - Spanner type from `Compiler.types`
 
-**Returns**: Typed parameter that will be compiled correctly for Spanner
+**Returns:** `Statement.Fragment`
 
-### `Compiler.types`
+### `nullOf(type)`
+
+Creates a typed null parameter.
+
+**Parameters:**
+- `type` - Spanner type from `types` object or string type code
+
+**Returns:** `Statement.Fragment`
+
+### `types`
 
 Spanner data type constructors:
 
-- `string()` - STRING type
-- `int64()` - INT64 type
-- `float64()` - FLOAT64 type
-- `bool()` - BOOL type
-- `json()` - JSON type
-- `bytes()` - BYTES type
-- `timestamp()` - TIMESTAMP type
-- `date()` - DATE type
-- `array(elementType)` - ARRAY type with element type
+```typescript
+types.string()     // STRING
+types.int64()      // INT64
+types.float64()    // FLOAT64
+types.bool()       // BOOL
+types.json()       // JSON
+types.bytes()      // BYTES
+types.timestamp()  // TIMESTAMP
+types.date()       // DATE
+types.array(elementType)  // ARRAY<T>
+```
 
-### `Layer.make(options)`
+### `layer(options?)`
 
-Creates an Effect Layer that provides the GoogleSQL compiler to `@effect/sql` clients.
+Creates an Effect Layer that provides the GoogleSQL compiler.
 
-**Options**: Same as `Compiler.make()`
+**Parameters:**
+- `options` - Same as `makeCompiler()`
 
-**Returns**: `Layer.Layer<Sql.client.Compiler>`
+**Returns:** `Layer.Layer<never, never, typeof GoogleSqlCompiler>`
+
+### `compiler`
+
+Default compiler instance (no name transformation).
+
+**Type:** `Statement.Compiler`
 
 ## How It Works
 
 1. Takes Effect SQL statements (using `@effect/sql/Statement`)
-2. Compiles to GoogleSQL dialect with proper escaping (backticks)
-3. Handles Spanner-specific type hints for parameters
-4. Integrates with Cloud Spanner client libraries
-5. Works seamlessly with Effect.ts dependency injection
+2. Compiles to GoogleSQL dialect:
+   - Escapes identifiers with backticks: `` `table_name` ``
+   - Converts placeholders to `@param1`, `@param2`, etc.
+   - Handles RETURNING → THEN RETURN conversion
+3. Attaches Spanner type hints as metadata on parameters
+4. Returns `[sql: string, params: Primitive[]]` tuple
+5. Type metadata retrieved via `getParamTypeMetadata(params)`
 
 ## GoogleSQL vs PostgreSQL
 
 Key differences handled by this compiler:
 
-- **Identifier escaping**: Uses backticks `` `identifier` `` instead of `"identifier"`
-- **Type hints**: Spanner requires explicit type hints for parameters in certain contexts
-- **Array syntax**: Follows GoogleSQL array conventions
-- **JSON handling**: Uses Spanner JSON type with proper casting
+| Feature | PostgreSQL | GoogleSQL |
+|---------|-----------|-----------|
+| Identifier escaping | `"identifier"` | `` `identifier` `` |
+| Parameter placeholders | `$1`, `$2` | `@param1`, `@param2` |
+| RETURNING clause | `RETURNING` | `THEN RETURN` |
+| Type hints | Optional | Required in some contexts |
+| Array syntax | `ARRAY[1,2,3]` | `[1,2,3]` |
+
+## Production Usage
+
+This package is designed to be consumed via effect-sql-spanner, which provides a complete Spanner client with automatic GoogleSQL compilation:
+
+```typescript
+import * as SpannerClient from "effect-sql-spanner/Client"
+import * as Effect from "effect/Effect"
+
+const program = Effect.gen(function* () {
+  const sql = yield* SpannerClient.ClientTag
+
+  // GoogleSQL compilation happens automatically
+  const users = yield* sql`SELECT * FROM users`
+
+  return users
+})
+```
 
 ## License
 
