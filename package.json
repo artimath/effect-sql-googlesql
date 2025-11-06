@@ -1,0 +1,76 @@
+{
+  "name": "effect-sql-googlesql",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "GoogleSQL compiler for @effect/sql with Cloud Spanner support",
+  "author": "Ryan Hunter <ryan@ryanhunter.io>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/artimath/effect-sql-googlesql.git"
+  },
+  "homepage": "https://github.com/artimath/effect-sql-googlesql#readme",
+  "bugs": {
+    "url": "https://github.com/artimath/effect-sql-googlesql/issues"
+  },
+  "keywords": [
+    "effect",
+    "sql",
+    "googlesql",
+    "spanner",
+    "cloud-spanner",
+    "compiler"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./build/esm/index.js",
+  "types": "./build/dts/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./build/esm/index.js",
+      "types": "./build/dts/index.d.ts"
+    },
+    "./Compiler": {
+      "import": "./build/esm/Compiler.js",
+      "types": "./build/dts/Compiler.d.ts"
+    },
+    "./Helpers": {
+      "import": "./build/esm/Helpers.js",
+      "types": "./build/dts/Helpers.d.ts"
+    },
+    "./Layer": {
+      "import": "./build/esm/Layer.js",
+      "types": "./build/dts/Layer.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "build/dts",
+    "build/esm",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "check": "tsc -b tsconfig.json",
+    "test": "vitest run",
+    "clean": "rm -rf build .tsbuildinfo",
+    "prepublishOnly": "pnpm clean && pnpm build"
+  },
+  "dependencies": {
+    "@google-cloud/spanner": "^7.17.0"
+  },
+  "peerDependencies": {
+    "@effect/sql": "^0.46.0",
+    "effect": "^3.18.0"
+  },
+  "devDependencies": {
+    "@effect/sql": "^0.46.0",
+    "@effect/vitest": "^0.26.0",
+    "effect": "^3.18.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.0"
+  }
+}
